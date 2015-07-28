@@ -8,13 +8,16 @@ var util        = require('util'),
     Inno        = require('innometrics-helper');
 
 var vars = {
-    bucketName: process.env.INNO_BUCKET_ID,
-    appKey: process.env.INNO_APP_KEY,
-    appName: process.env.INNO_APP_ID,
-    groupId: process.env.INNO_COMPANY_ID,
-    apiUrl: process.env.INNO_API_HOST,
-    collectApp: process.env.INNO_APP_ID
+    bucketName: "bucket1",
+    appKey: "H9DPVSfh8IfaUbXA",
+    appName: "innometrics-121",
+    groupId: 4,
+    apiUrl: "https://staging.innomdc.com",
+    collectApp: "innometrics-121"
 };
+
+var wAppKey = "999551e1460674ec3787ba4f9c17d440";
+var appRequestTimeout = 15000;
 
 var WeatherApp = function (db) {
     this.clearProfileStack();
@@ -23,22 +26,21 @@ var WeatherApp = function (db) {
 };
 
 WeatherApp.prototype = {
-    addProfileToStack: function (data, meta) {
+    addProfileToStack: function (data, ip) {
         var profile = data.profile,
-            session = data.session,
-            ip      = meta.requestMeta.requestIp;
-    
+            session = data.session;
+
         this.profilesStack[profile.id + "|" + session.section] = ip;
     },
-    
+
     getProfilesFromStack: function () {
         return this.profilesStack;
     },
-    
+
     clearProfileStack: function () {
         this.profilesStack = {};
     },
-    
+
     getCoordsByIp: function (ip, callback) {
         var self = this;
         this.getCoordByIpFromCache(ip, function (error, data) {
@@ -47,15 +49,15 @@ WeatherApp.prototype = {
                 self.requestCoordsByIp(ip, callback);
             } else {
                 console.log("Record was found in cache");
-                callback(null, { latitude: data.latitude, longitude: data.longitude });
+                callback(null, {latitude: data.latitude, longitude: data.longitude});
             }
         });
     },
-    
+
     getCoordByIpFromCache: function (ip, callback) {
         this.db.get(util.format('SELECT * FROM geo_ip_cache WHERE ip="%s"', ip), callback);
     },
-    
+
     addCoordsToCache: function (ip, geoData, callback) {
         var self = this;
         this.getCoordByIpFromCache(ip, function (error, data) {
@@ -64,20 +66,20 @@ WeatherApp.prototype = {
             } else {
                 self.db.run(util.format('INSERT INTO geo_ip_cache(ip, latitude, longitude) VALUES ("%s","%s","%s")', ip, geoData.latitude, geoData.longitude));
             }
-            
+
             callback();
         });
     },
-    
+
     getAllIpsFromCache: function (callback) {
         this.db.all('SELECT * FROM geo_ip_cache', function (error, data) {
             callback((!error && data) ? data : null);
         });
     },
-    
+
     requestCoordsByIp: function (ip, callback) {
         var self = this;
-        satelize.satelize({ ip: ip }, function(error, geoData) {
+        satelize.satelize({ip: ip}, function (error, geoData) {
             if (error) {
                 callback(error);
             } else {
@@ -86,10 +88,10 @@ WeatherApp.prototype = {
                 } catch (e) {
                     geoData = null;
                 }
-                
+
                 if (geoData) {
                     self.addCoordsToCache(ip, geoData, function () {
-                        callback(null, { latitude: geoData.latitude, longitude: geoData.longitude });
+                        callback(null, {latitude: geoData.latitude, longitude: geoData.longitude});
                     });
                 } else {
                     callback(new Error("Incorrect geo data"));
@@ -97,22 +99,22 @@ WeatherApp.prototype = {
             }
         });
     },
-    
+
     addGeoDataToProfiles: function () {
         console.log("Start adding data");
         if (this.processLock) {
             console.log("process lock exists");
             return false;
         }
-        
+
         this.processLock = true;
-        
+
         var pStack  = this.getProfilesFromStack(),
             self    = this,
             keys    = Object.keys(pStack);
-    
+
         console.log("Proceed " + keys.length + " indexes");
-        
+
         this.clearProfileStack();
 
         asyncLib.eachSeries(keys, function (item, callback) {
@@ -121,20 +123,20 @@ WeatherApp.prototype = {
             if (splitted && splitted.length === 2) {
                 self.addGeoDataToProfile(splitted[0], splitted[1], pStack[item], callback);
             }
-        },function () {
+        }, function () {
             self.processLock = false;
             console.log("Proceed finished");
         });
     },
-    
+
     addGeoDataToProfile: function (profile, section, ip, callback) {
         var self = this;
         console.log("Add geo data to profile " + profile);
         this.getCoordsByIp(ip, function (error, data) {
             console.log("get coordinates: " + (data ? JSON.stringify([data.latitude, data.longitude]) : null));
             if (!error && data) {
-                oWeather.now([[data.latitude, data.longitude]], function (error,forecast) {
-                    
+                oWeather.now([[data.latitude, data.longitude]], function (error, forecast) {
+
                     if (!error && forecast) {
                         forecast = forecast[0];
 
@@ -143,21 +145,20 @@ WeatherApp.prototype = {
                             windBlock           = forecast.values.wind,
                             cloudsBlock         = forecast.values.clouds;
                         console.log(JSON.stringify(forecast));
-                        inno.setProfileAttributes({
-                            profileId: profile,
-                            section: section,
-                            attributes: {
-                                weather_temp                : (1*mainTempBlock.temp - 273.15) + "\u00B0C", // Degree symbol
-                                weather_humidity            : mainTempBlock.humidity + "%",
-                                weather_clouds              : cloudsBlock.all + "%",
-                                weather_wind_speed          : windBlock.speed + "m/s",
-                                weather_wind_direction      : self.getNameByWindDegrees(windBlock.deg),
-                                weather_icon                : "http://openweathermap.org/img/w/" + (baseWeatherBlock.icon) + ".png",
-                                weather_ts                  : Date.now()
-                            }
-                        }, function () {
-                            callback();
+
+                        var profileObj = Inno.Profile(profile);
+
+                        var pAttrs = profileObj.createAttributes({
+                            weather_temp:           (1 * mainTempBlock.temp - 273.15) + "\u00B0C", // Degree symbol
+                            weather_humidity:       mainTempBlock.humidity + "%",
+                            weather_clouds:         cloudsBlock.all + "%",
+                            weather_wind_speed:     windBlock.speed + "m/s",
+                            weather_wind_direction: self.getNameByWindDegrees(windBlock.deg),
+                            weather_icon:           "http://openweathermap.org/img/w/" + (baseWeatherBlock.icon) + ".png",
+                            weather_ts:             Date.now()
                         });
+
+                        profileObj.setAttributes(pAttrs);
                     } else {
                         callback();
                     }
@@ -167,32 +168,45 @@ WeatherApp.prototype = {
             }
         });
     },
-    
+
     getNameByWindDegrees: function (deg) {
-        var windNames   = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"],
-            index       = Math.round(deg/22.5);
-    
+        var windNames   = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
+            index       = Math.round(deg / 22.5);
+
         if (isNaN(index)) {
             return null;
         } else if (index > 15) {
             index = 0;
         }
-        
+
         return windNames[index];
     }
 };
 
-var inno        = new Inno(vars),
+console.log(vars);
+
+var inno        = new Inno.InnoHelper(vars),
     db          = new sqlite3.Database('./inno.db'),
     weatherApp  = new WeatherApp(db);
 
 var app             = express(),
-    port            = parseInt(process.env.PORT, 10);
-   
-app.use(bodyParser.json());
+    port            = 9900; // parseInt(process.env.PORT, 10);
 
+app.use(bodyParser.json());
 app.use(function (req, res, next) {
     res.header('Access-Control-Allow-Origin', '*');
+    next();
+});
+
+app.use(function (req, res, next) {
+    if (res) {
+        setTimeout(function () {
+            if (!res.finished) {
+                res.sendStatus(408);
+            }
+        }, appRequestTimeout);
+    }
+
     next();
 });
 
@@ -203,42 +217,51 @@ app.get('/', function (req, res) {
 });
 
 app.post('/', function (req, res) {
-    inno.getProfile(req.body, function (error, data) { //@TODO need add meta property to profile result!
-        console.log("Profile found!");
-        if (!error && data) {
-            console.log("Add profile to stack");
-            weatherApp.addProfileToStack(data, req.body.meta);
-        }
-        
-        res.send("");
-    });
+    var profile, error, ip;
+    try {
+        profile = inno.getProfileFromRequest(req.body);
+    } catch (e) {
+        error = e.message;
+    }
+
+    ip = req.get("requestIp"); // request.body.meta
+
+    if (!profile || !ip) {
+        res.sendStatus(400);
+        console.error(error || "Request from undefined host");
+        return;
+    }
+
+    weatherApp.addProfileToStack(profile, ip);
+    res.sendStatus(200);
 });
 
 var startApp = function () {
     app.listen(port, function () {
         console.log('Listening on port: ' + port);
     });
-    
+
     setInterval(function () {
         weatherApp.addGeoDataToProfiles();
-    },300000);
+    }, 300000);
 };
 
 db.serialize(function () {
     db.run("CREATE TABLE IF NOT EXISTS geo_ip_cache (ip TEXT,latitude TEXT,longitude TEXT)");
-    
+
     var checkApiKey = function () {
         inno.getAppSettings(function (error, settings) {
-            if (!error && settings && settings.weatherApiKey) {
-                oWeather.setAPPID(settings.weatherApiKey);  
+            if (wAppKey || (!error && settings && settings.weatherApiKey)) {
+                oWeather.setAPPID(wAppKey || settings.weatherApiKey);
                 startApp();
                 console.log("All ok! App started successfully.");
             } else {
+                console.log(error.message);
                 console.log("weatherApiKey isn't found. Will wait for 2 minutes");
                 setTimeout(checkApiKey, 120000);
             }
         });
     };
-    
+
     checkApiKey();
 });
