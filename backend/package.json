@@ -12,7 +12,7 @@
     "body-parser": "^1.9.3",
     "express": "^4.0.0",
     "request": "^2.45.0",
-    "innometrics-helper": "0.0.3",
+    "innometrics-helper": "^0.0.7",
     "sqlite3": "^3.0.4",
     "openweather-node": "*",
     "async": "*",
