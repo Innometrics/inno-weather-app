@@ -8,15 +8,14 @@ var util        = require('util'),
     Inno        = require('innometrics-helper');
 
 var vars = {
-    bucketName: "bucket1",
-    appKey: "H9DPVSfh8IfaUbXA",
-    appName: "innometrics-121",
-    groupId: 4,
-    apiUrl: "https://staging.innomdc.com",
-    collectApp: "innometrics-121"
+    bucketName: process.env.INNO_BUCKET_ID,
+    appKey: process.env.INNO_APP_KEY,
+    appName: process.env.INNO_APP_ID,
+    groupId: process.env.INNO_COMPANY_ID,
+    apiUrl: process.env.INNO_API_HOST,
+    collectApp: process.env.INNO_APP_ID
 };
 
-var wAppKey = "999551e1460674ec3787ba4f9c17d440";
 var appRequestTimeout = 15000;
 
 var WeatherApp = function (db) {
@@ -27,10 +26,10 @@ var WeatherApp = function (db) {
 
 WeatherApp.prototype = {
     addProfileToStack: function (data, ip) {
-        var profile = data.profile,
-            session = data.session;
+        var profile = data.id,
+            session = data.sessions[0];
 
-        this.profilesStack[profile.id + "|" + session.section] = ip;
+        this.profilesStack[profile + "|" + session.section] = ip;
     },
 
     getProfilesFromStack: function () {
@@ -146,9 +145,9 @@ WeatherApp.prototype = {
                             cloudsBlock         = forecast.values.clouds;
                         console.log(JSON.stringify(forecast));
 
-                        var profileObj = Inno.Profile(profile);
+                        var profileObj = new Inno.Profile({ id: profile });
 
-                        var pAttrs = profileObj.createAttributes({
+                        var pAttrs = profileObj.createAttributes(vars.collectApp, section, {
                             weather_temp:           (1 * mainTempBlock.temp - 273.15) + "\u00B0C", // Degree symbol
                             weather_humidity:       mainTempBlock.humidity + "%",
                             weather_clouds:         cloudsBlock.all + "%",
@@ -159,6 +158,14 @@ WeatherApp.prototype = {
                         });
 
                         profileObj.setAttributes(pAttrs);
+                        
+                        inno.saveProfile(profileObj, function (error) {
+                            if (error) {
+                                console.log("Error: " + error.message);
+                            }
+                            
+                            callback(error);
+                        });
                     } else {
                         callback();
                     }
@@ -190,7 +197,7 @@ var inno        = new Inno.InnoHelper(vars),
     weatherApp  = new WeatherApp(db);
 
 var app             = express(),
-    port            = 9900; // parseInt(process.env.PORT, 10);
+    port            = parseInt(process.env.PORT, 10);
 
 app.use(bodyParser.json());
 app.use(function (req, res, next) {
@@ -224,7 +231,7 @@ app.post('/', function (req, res) {
         error = e.message;
     }
 
-    ip = req.get("requestIp"); // request.body.meta
+    ip = req.body.meta.requestMeta.requestIp;
 
     if (!profile || !ip) {
         res.sendStatus(400);
@@ -232,6 +239,7 @@ app.post('/', function (req, res) {
         return;
     }
 
+    console.log("weather data will be added to profile: '" + profile.id + "'");
     weatherApp.addProfileToStack(profile, ip);
     res.sendStatus(200);
 });
@@ -243,7 +251,7 @@ var startApp = function () {
 
     setInterval(function () {
         weatherApp.addGeoDataToProfiles();
-    }, 300000);
+    }, 30000);
 };
 
 db.serialize(function () {
@@ -251,8 +259,8 @@ db.serialize(function () {
 
     var checkApiKey = function () {
         inno.getAppSettings(function (error, settings) {
-            if (wAppKey || (!error && settings && settings.weatherApiKey)) {
-                oWeather.setAPPID(wAppKey || settings.weatherApiKey);
+            if (!error && settings && settings.weatherApiKey) {
+                oWeather.setAPPID(settings.weatherApiKey);
                 startApp();
                 console.log("All ok! App started successfully.");
             } else {
