@@ -264,7 +264,6 @@ db.serialize(function () {
                 startApp();
                 console.log("All ok! App started successfully.");
             } else {
-                console.log(error.message);
                 console.log("weatherApiKey isn't found. Will wait for 2 minutes");
                 setTimeout(checkApiKey, 120000);
             }
