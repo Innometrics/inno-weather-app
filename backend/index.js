@@ -148,7 +148,7 @@ WeatherApp.prototype = {
                         var profileObj = new Inno.Profile({ id: profile });
 
                         var pAttrs = profileObj.createAttributes(vars.collectApp, section, {
-                            weather_temp:           (1 * mainTempBlock.temp - 273.15) + "\u00B0C", // Degree symbol
+                            weather_temp:           (1 * mainTempBlock.temp - 273.15).toFixed(2) + "\u00B0C", // Degree symbol
                             weather_humidity:       mainTempBlock.humidity + "%",
                             weather_clouds:         cloudsBlock.all + "%",
                             weather_wind_speed:     windBlock.speed + "m/s",
