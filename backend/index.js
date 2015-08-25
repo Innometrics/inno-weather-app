@@ -130,7 +130,7 @@ WeatherApp.prototype = {
 
     addGeoDataToProfile: function (profile, section, ip, callback) {
         var self = this;
-        console.log("Add geo data to profile " + profile);
+        console.log("Add geo data to profile " + profile + " by ip: '" + ip + "'");
         this.getCoordsByIp(ip, function (error, data) {
             console.log("get coordinates: " + (data ? JSON.stringify([data.latitude, data.longitude]) : null));
             if (!error && data) {
@@ -234,12 +234,13 @@ app.post('/', function (req, res) {
     ip = req.body.meta.requestMeta.requestIp;
 
     if (!profile || !ip) {
+        console.log("Meta: " + JSON.stringify(req.body.meta.requestMeta));
         res.sendStatus(400);
         console.error(error || "Request from undefined host");
         return;
     }
 
-    console.log("weather data will be added to profile: '" + profile.id + "'");
+    console.log("weather data will be added to profile: '" + profile.id + "', from ip: '" + ip + "'");
     weatherApp.addProfileToStack(profile, ip);
     res.sendStatus(200);
 });
